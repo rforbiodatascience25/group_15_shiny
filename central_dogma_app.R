@@ -42,17 +42,17 @@ translate_rna <- function(rna){
     AGU="S", AGC="S", AGA="R", AGG="R",
     GGU="G", GGC="G", GGA="G", GGG="G"
   )
-  
+
   # Split into codons
   codons <- substring(rna, seq(1, nchar(rna), by = 3), seq(3, nchar(rna), by = 3))
   aas <- unname(code[codons])
   # Replace unknown/NA codons with "X"
   aas[is.na(aas)] <- "X"
-  
+
   # Stop at first STOP (*)
   stop_idx <- match("*", aas, nomatch = 0)
   if (stop_idx > 0) aas <- aas[seq_len(stop_idx - 1)]
-  
+
   paste0(aas, collapse = "")
 }
 
@@ -64,6 +64,33 @@ base_freqs <- function(seq, alphabet = c("A","C","G","T","U")){
   props  <- if (length(chars) > 0) counts / length(chars) else counts
   data.frame(Base = alphabet, Count = counts, Proportion = round(props, 3))
 }
+
+#Plot
+AA_counts_plot <- function(sequence){
+
+  #Separate string into character vector by character
+  amino_acids <- sequence |>
+    stringr::str_split(pattern = stringr::boundary("character"), simplify = TRUE) |>
+    as.character() |>
+    unique()
+
+  #Count number of times each amino acid is found in the character vector amino_acids
+  counts <- sapply(amino_acids, function(amino_acid) stringr::str_count(string = sequence, pattern =  amino_acid)) |>
+    as.data.frame()
+
+  #Create list with amino acids and their counts
+  colnames(counts) <- c("Counts")
+  counts[["sequence"]] <- rownames(counts)
+
+  sequence_barplot <- counts |>
+    ggplot2::ggplot(ggplot2::aes(x = sequence, y = Counts, fill = sequence)) +
+    ggplot2::geom_col() +
+    ggplot2::theme_bw() +
+    ggplot2::theme(legend.position = "none")
+
+  return(sequence_barplot)
+}
+
 
 # ----- UI -------------------------------------------------------------------
 
@@ -86,7 +113,11 @@ ui <- fluidPage(
       h4("Protein (translated)"),
       verbatimTextOutput("protein"),
       h4("Base frequencies"),
-      tableOutput("dna_freqs")
+      tableOutput("dna_freqs"),
+      h4("Nucleotide frequency plot"),
+      plotOutput("DNA_plot"),
+      h4("Amino acid frequency plot"),
+      plotOutput("freq_plot")
     )
   )
 )
@@ -94,7 +125,7 @@ ui <- fluidPage(
 # ----- Server ---------------------------------------------------------------
 
 server <- function(input, output, session){
-  
+
   # Validate probabilities once when needed
   probs <- reactive({
     p <- c(input$prob_A, input$prob_T, input$prob_C, input$prob_G)
@@ -104,7 +135,7 @@ server <- function(input, output, session){
     validate(need(abs(s - 1) < 1e-8, "Probabilities must sum to 1."))
     p
   })
-  
+
   # Generate DNA whenever the user clicks "Generate" or changes length/probs
   dna_seq <- reactive({
     # tie to inputs so changes also regenerate
@@ -114,11 +145,11 @@ server <- function(input, output, session){
       gene_dna(length = input$n_bases, base_probs = probs())
     })
   })
-  
+
   # Downstream reactive derivations
   rna_seq <- reactive( transcribe_dna(dna_seq()) )
   protein_seq <- reactive( translate_rna(rna_seq()) )
-  
+
   # Outputs
   output$dna     <- renderText(dna_seq())
   output$rna     <- renderText(rna_seq())
@@ -130,6 +161,12 @@ server <- function(input, output, session){
   output$dna_freqs <- renderTable({
     base_freqs(dna_seq(), alphabet = c("A","C","G","T"))
   }, striped = TRUE, spacing = "s")
+
+  output$DNA_plot <- renderPlot({
+    AA_counts_plot(dna_seq())})
+
+  output$freq_plot <- renderPlot({
+    AA_counts_plot(protein_seq())})
 }
 
 shinyApp(ui, server)
